@@ -917,7 +917,7 @@ Interactively, set the current buffer's ROOM's TOPIC."
   "Leave ROOM on SESSION.
 ROOM may be an `ement-room' struct, or a room ID or alias
 string."
-  (interactive (ement-complete-room (ement-complete-session)))
+  (interactive (ement-complete-room :session (ement-complete-session)))
   (cl-assert room) (cl-assert session)
   (cl-etypecase room
     (ement-room)
