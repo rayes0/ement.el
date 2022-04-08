@@ -550,10 +550,11 @@ If no URI is found, prompt the user for the hostname."
                                     (suggest t) (prompt "Room: "))
   "Return a (room session) list selected from SESSION with completion.
 If SESSION is nil, select from rooms in all of `ement-sessions'.
-When SUGGEST, suggest current buffer's room as initial
-input (i.e. it should be set to nil when switching from one room
-buffer to another).  PROMPT may override the default prompt.
-PREDICATE may be a function to select which rooms are offered."
+When SUGGEST, suggest current buffer's room (or a room at point
+in a room list buffer) as initial input (i.e. it should be set to
+nil when switching from one room buffer to another).  PROMPT may
+override the default prompt.  PREDICATE may be a function to
+select which rooms are offered."
   (pcase-let* ((sessions (if session
                              (list session)
                            (mapcar #'cdr ement-sessions)))
@@ -566,9 +567,12 @@ PREDICATE may be a function to select which rooms are offered."
                                                        (list room session)))))
                (names (mapcar #'car name-to-room-session))
                (selected-name (completing-read prompt names nil t
-                                               (when (and suggest (equal major-mode 'ement-room-mode))
-                                                 ;; Suggest current buffer's room.
-                                                 (ement--format-room ement-room)))))
+                                               (when suggest
+                                                 (pcase major-mode
+                                                   ('ement-room-mode (ement--format-room ement-room))
+                                                   ('ement-room-list-mode (ement--format-room (tabulated-list-get-id)))
+                                                   ('ement-taxy-mode (pcase (oref (magit-current-section) value)
+                                                                       (`[,room ,_session] (ement--format-room room)))))))))
     (alist-get selected-name name-to-room-session nil nil #'string=)))
 
 (defun ement--format-room (room)
