@@ -437,10 +437,7 @@ If DELETE (interactively, with prefix), delete it."
   (interactive
    (pcase-let* ((`(,room ,session) (ement-complete-room))
                 (prompt (if current-prefix-arg "Delete tag: " "Add tag: "))
-                (default-tags (ement-alist "Favourite" "m.favourite"
-                                           "Low-priority" "m.lowpriority"))
-                (input (completing-read prompt default-tags))
-                (tag (alist-get input default-tags (concat "u." input) nil #'string=)))
+                (tag (ement-complete-tag :room room :session session :prompt prompt)))
      (list tag room session current-prefix-arg)))
   (pcase-let* (((cl-struct ement-session user) session)
                ((cl-struct ement-user (id user-id)) user)
@@ -452,6 +449,19 @@ If DELETE (interactively, with prefix), delete it."
     (ement-api session endpoint :version "v3" :method method :data (unless delete "{}")
       :then (lambda (data)
               (ement-debug "Changed tag on room" method tag data room)))))
+
+(cl-defun ement-complete-tag (&key room session (prompt "Tag: "))
+  "Complete tag for ROOM on SESSION.
+ROOM and SESSION may be nil.  When input doesn't match a known
+tag, it is prefixed with \"u.\"."
+  (ignore room session)
+  ;; FIXME: Optionally offer existing tags (for when deleting; and in that case, only show
+  ;; default tags when they exist on the room).
+  (let* ((default-tags (ement-alist "Favourite" "m.favourite"
+                                    "Low-priority" "m.lowpriority"))
+         (input (completing-read prompt default-tags))
+         (tag (alist-get input default-tags (concat "u." input) nil #'string=)))
+    tag))
 
 ;;;; Functions
 
@@ -554,7 +564,9 @@ When SUGGEST, suggest current buffer's room (or a room at point
 in a room list buffer) as initial input (i.e. it should be set to
 nil when switching from one room buffer to another).  PROMPT may
 override the default prompt.  PREDICATE may be a function to
-select which rooms are offered."
+select which rooms are offered; it is also applied to the
+suggested room."
+  (declare (indent defun))
   (pcase-let* ((sessions (if session
                              (list session)
                            (mapcar #'cdr ement-sessions)))
@@ -566,14 +578,27 @@ select which rooms are offered."
                                          collect (cons (ement--format-room room)
                                                        (list room session)))))
                (names (mapcar #'car name-to-room-session))
-               (selected-name (completing-read prompt names nil t
-                                               (when suggest
-                                                 (pcase major-mode
-                                                   ('ement-room-mode (ement--format-room ement-room))
-                                                   ('ement-room-list-mode (ement--format-room (tabulated-list-get-id)))
-                                                   ('ement-taxy-mode (pcase (oref (magit-current-section) value)
-                                                                       (`[,room ,_session] (ement--format-room room)))))))))
+               (selected-name (completing-read
+                               prompt names nil t
+                               (when suggest
+                                 (when-let ((suggestion (ement--room-at-point)))
+                                   (when (or (not predicate)
+                                             (and predicate (funcall predicate suggestion)))
+                                     suggestion))))))
     (alist-get selected-name name-to-room-session nil nil #'string=)))
+
+(defun ement--room-at-point ()
+  "Return room at point.
+Works in major-modes `ement-room-mode', `ement-room-list-mode',
+and `ement-taxy-mode'."
+  (pcase major-mode
+    ('ement-room-mode (ement--format-room ement-room))
+    ('ement-room-list-mode (ement--format-room (tabulated-list-get-id)))
+    ('ement-taxy-mode
+     (cl-typecase (oref (magit-current-section) value)
+       (taxy-magit-section nil)
+       (t (pcase (oref (magit-current-section) value)
+            (`[,room ,_session] (ement--format-room room))))))))
 
 (defun ement--format-room (room)
   "Return ROOM formatted with name, alias, ID, and topic.
